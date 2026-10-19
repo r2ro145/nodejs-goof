@@ -41,20 +41,27 @@ app.use(logger('dev'));
 
 // Only accept requests that came through Akamai, which adds the
 // X-Origin-Auth header. Skipped when ORIGIN_AUTH_TOKEN is unset (local dev).
+// With tiered distribution both the edge and the parent add the header, so
+// it can arrive as "token, token"; accept it if any value matches.
 var originAuthToken = process.env.ORIGIN_AUTH_TOKEN;
 if (originAuthToken) {
   var expectedToken = Buffer.from(originAuthToken);
+  var tokenMatches = function (value) {
+    var provided = Buffer.from(value.trim());
+    return provided.length === expectedToken.length &&
+      crypto.timingSafeEqual(provided, expectedToken);
+  };
   app.use(function (req, res, next) {
     var header = req.get('X-Origin-Auth');
-    var provided = Buffer.from((header || '').trim());
-    if (provided.length === expectedToken.length &&
-        crypto.timingSafeEqual(provided, expectedToken)) {
+    var values = (header || '').split(',');
+    if (values.some(tokenMatches)) {
       return next();
     }
     // Log why, never the token itself
     var reason = header === undefined ? 'header missing' : 'value mismatch';
-    console.log('origin-auth rejected: ' + reason + ' (got ' + provided.length +
-      ' chars, expected ' + expectedToken.length + ')');
+    console.log('origin-auth rejected: ' + reason + ' (' + values.length +
+      ' value(s), lengths ' + values.map(function (v) { return v.trim().length; }).join('/') +
+      ', expected ' + expectedToken.length + ')');
     res.status(403).send('Forbidden (' + reason + ')');
   });
 }
