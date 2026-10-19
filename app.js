@@ -38,6 +38,22 @@ cons.dust.helpers = dustHelpers;
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(logger('dev'));
+
+// Only accept requests that came through Akamai, which adds the
+// X-Origin-Auth header. Skipped when ORIGIN_AUTH_TOKEN is unset (local dev).
+var originAuthToken = process.env.ORIGIN_AUTH_TOKEN;
+if (originAuthToken) {
+  var expectedToken = Buffer.from(originAuthToken);
+  app.use(function (req, res, next) {
+    var provided = Buffer.from(req.get('X-Origin-Auth') || '');
+    if (provided.length === expectedToken.length &&
+        crypto.timingSafeEqual(provided, expectedToken)) {
+      return next();
+    }
+    res.status(403).send('Forbidden');
+  });
+}
+
 app.use(methodOverride());
 app.use(session({
   secret: 'keyboard cat',

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: goof
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    domains:
+      - origin.sec.akamaicr.art
+    envVars:
+      - key: NODE_VERSION
+        value: 18.20.4
+      # MongoDB Atlas connection string; entered in the Render dashboard
+      - key: MONGODB_URI
+        sync: false
+      # Shared secret Akamai sends as the X-Origin-Auth header
+      - key: ORIGIN_AUTH_TOKEN
+        generateValue: true
