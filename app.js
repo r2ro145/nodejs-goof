@@ -45,11 +45,15 @@ var originAuthToken = process.env.ORIGIN_AUTH_TOKEN;
 if (originAuthToken) {
   var expectedToken = Buffer.from(originAuthToken);
   app.use(function (req, res, next) {
-    var provided = Buffer.from(req.get('X-Origin-Auth') || '');
+    var header = req.get('X-Origin-Auth');
+    var provided = Buffer.from((header || '').trim());
     if (provided.length === expectedToken.length &&
         crypto.timingSafeEqual(provided, expectedToken)) {
       return next();
     }
+    // Log why, never the token itself
+    console.log('origin-auth rejected: ' + (header === undefined ? 'header missing' :
+      'value mismatch (got ' + provided.length + ' chars, expected ' + expectedToken.length + ')'));
     res.status(403).send('Forbidden');
   });
 }
