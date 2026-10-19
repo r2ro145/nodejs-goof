@@ -52,9 +52,10 @@ if (originAuthToken) {
       return next();
     }
     // Log why, never the token itself
-    console.log('origin-auth rejected: ' + (header === undefined ? 'header missing' :
-      'value mismatch (got ' + provided.length + ' chars, expected ' + expectedToken.length + ')'));
-    res.status(403).send('Forbidden');
+    var reason = header === undefined ? 'header missing' : 'value mismatch';
+    console.log('origin-auth rejected: ' + reason + ' (got ' + provided.length +
+      ' chars, expected ' + expectedToken.length + ')');
+    res.status(403).send('Forbidden (' + reason + ')');
   });
 }
 
